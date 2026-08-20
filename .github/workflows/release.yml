@@ -29,7 +29,14 @@ jobs:
 
       - name: Build Executable with PyInstaller
         run: |
-          pyinstaller --noconfirm --onedir --windowed --icon "app_icon.ico" --name "SmartBundle" sb_gui.py
+          pyinstaller --noconfirm --onedir --windowed --icon "app_icon.ico" --add-data "app_icon.ico;." --name "SmartBundle" sb_gui.py
+
+      - name: Copy Installer Assets to Dist
+        run: |
+          Copy-Item -Path "app_icon.ico" -Destination "dist\SmartBundle\app_icon.ico" -Force
+          Copy-Item -Path "Instalar_SmartBundle_En_C.bat" -Destination "dist\SmartBundle\Instalar_SmartBundle_En_C.bat" -Force
+          Copy-Item -Path "install_to_program_files.ps1" -Destination "dist\SmartBundle\install_to_program_files.ps1" -Force
+          Copy-Item -Path "sb_context_menu.py" -Destination "dist\SmartBundle\sb_context_menu.py" -Force
 
       - name: Compress Build Artifact
         run: |
