@@ -254,3 +254,84 @@ class SBArchiver:
             manifest_engine = get_engine_by_id(AlgorithmID(manifest_alg))
             manifest_raw = manifest_engine.decompress(manifest_comp)
             return ArchiveManifest.from_json_bytes(manifest_raw)
+
+    def extract_single_or_selected(
+        self,
+        sb_path: str,
+        destination_dir: str,
+        selected_paths: Optional[list[str]] = None
+    ) -> list[str]:
+        """Extrae únicamente los archivos seleccionados a destino."""
+        temp_extract = tempfile.mkdtemp(prefix="sb_ext_")
+        extracted_list = []
+        try:
+            manifest = self.decompress(sb_path, temp_extract)
+            target_set = set(selected_paths) if selected_paths else {e.path for e in manifest.files}
+            
+            for entry in manifest.files:
+                if entry.path in target_set:
+                    src_f = os.path.join(temp_extract, entry.path)
+                    dst_f = os.path.join(destination_dir, os.path.basename(entry.path))
+                    os.makedirs(os.path.dirname(dst_f), exist_ok=True)
+                    shutil.copy2(src_f, dst_f)
+                    extracted_list.append(dst_f)
+        finally:
+            shutil.rmtree(temp_extract, ignore_errors=True)
+        return extracted_list
+
+    def delete_files_from_archive(self, sb_path: str, paths_to_delete: list[str]) -> dict:
+        """Elimina archivos del archivo .sb recomprimiendo el contenido restante."""
+        temp_dir = tempfile.mkdtemp(prefix="sb_del_")
+        temp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".sb")
+        temp_out_path = temp_out.name
+        temp_out.close()
+
+        try:
+            self.decompress(sb_path, temp_dir)
+            del_set = set(paths_to_delete)
+
+            for rel_p in del_set:
+                full_p = os.path.join(temp_dir, rel_p)
+                if os.path.isfile(full_p):
+                    os.remove(full_p)
+                elif os.path.isdir(full_p):
+                    shutil.rmtree(full_p, ignore_errors=True)
+
+            stats = self.compress(temp_dir, temp_out_path)
+            shutil.move(temp_out_path, sb_path)
+            return stats
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            if os.path.exists(temp_out_path):
+                os.remove(temp_out_path)
+
+    def add_files_to_archive(self, sb_path: str, new_items: list[str]) -> dict:
+        """Agrega nuevos archivos o carpetas a un archivo .sb existente."""
+        temp_dir = tempfile.mkdtemp(prefix="sb_add_")
+        temp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".sb")
+        temp_out_path = temp_out.name
+        temp_out.close()
+
+        try:
+            if os.path.exists(sb_path) and os.path.getsize(sb_path) > 0:
+                self.decompress(sb_path, temp_dir)
+
+            for item in new_items:
+                if not os.path.exists(item):
+                    continue
+                name = os.path.basename(item)
+                target = os.path.join(temp_dir, name)
+                if os.path.isdir(item):
+                    if os.path.exists(target):
+                        shutil.rmtree(target)
+                    shutil.copytree(item, target)
+                else:
+                    shutil.copy2(item, target)
+
+            stats = self.compress(temp_dir, temp_out_path)
+            shutil.move(temp_out_path, sb_path)
+            return stats
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            if os.path.exists(temp_out_path):
+                os.remove(temp_out_path)
