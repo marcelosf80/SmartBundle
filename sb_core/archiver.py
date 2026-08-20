@@ -5,7 +5,7 @@ import zlib
 import hashlib
 import tempfile
 import shutil
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 from .constants import (
     MAGIC_HEADER,
@@ -15,7 +15,7 @@ from .constants import (
     CompressionMode,
 )
 from .engines import get_engine_by_id
-from .manifest import ArchiveManifest, FileEntry, scan_target, file_data_generator
+from .manifest import ArchiveManifest, FileEntry, scan_target, scan_multi_targets, file_data_generator
 from .preprocessors import ZipStreamPreprocessor
 from .optimizer import BlockOptimizer
 
@@ -32,18 +32,20 @@ class SBArchiver:
 
     def compress(
         self,
-        source_path: str,
+        source_path: Union[str, list[str]],
         output_sb_path: str,
         progress_cb: Optional[Callable[[str, int, int, str], None]] = None
     ) -> dict:
-        source_path = os.path.abspath(source_path)
-        base_dir = os.path.dirname(source_path) if os.path.isfile(source_path) else source_path
-        
-        file_paths = scan_target(source_path)
-        if not file_paths:
-            raise ValueError(f"No se encontraron archivos en: {source_path}")
+        if isinstance(source_path, str):
+            targets = [source_path]
+        else:
+            targets = list(source_path)
 
-        total_files = len(file_paths)
+        file_pairs = scan_multi_targets(targets)
+        if not file_pairs:
+            raise ValueError(f"No se encontraron archivos válidos en los objetivos especificados: {targets}")
+
+        total_files = len(file_pairs)
         entries: list[FileEntry] = []
         current_offset = 0
         total_orig_bytes = 0
@@ -59,9 +61,9 @@ class SBArchiver:
         
         try:
             with open(temp_blocks_path, "wb") as b_out:
-                for idx, file_p in enumerate(file_paths):
+                for idx, (abs_file_p, rel_archive_p) in enumerate(file_pairs):
                     try:
-                        entry, stream_payload = file_data_generator(file_p, base_dir, current_offset)
+                        entry, stream_payload = file_data_generator(abs_file_p, rel_archive_p, current_offset)
                     except Exception:
                         continue
 
@@ -85,7 +87,8 @@ class SBArchiver:
                         blocks_count += 1
 
                         if progress_cb:
-                            progress_cb("compressed_block", blocks_count, 0, AlgorithmID(alg_id).name)
+                            b_ratio = (1.0 - len(comp_chunk) / len(chunk)) * 100.0 if len(chunk) > 0 else 0.0
+                            progress_cb("compressed_block", blocks_count, int(b_ratio * 100), AlgorithmID(alg_id).name)
 
                     if progress_cb and (idx % 50 == 0 or idx == total_files - 1):
                         progress_cb("scanned", idx + 1, total_files, entry.path)
@@ -100,6 +103,10 @@ class SBArchiver:
                     b_out.write(comp_chunk)
                     blocks_count += 1
                     block_buffer.clear()
+
+                    if progress_cb:
+                        b_ratio = (1.0 - len(comp_chunk) / len(chunk)) * 100.0 if len(chunk) > 0 else 0.0
+                        progress_cb("compressed_block", blocks_count, int(b_ratio * 100), AlgorithmID(alg_id).name)
 
             # 2. Empaquetado de Metadatos y Manifiesto
             manifest = ArchiveManifest(

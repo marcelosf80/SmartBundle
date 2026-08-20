@@ -527,8 +527,7 @@ class SmartBundleProApp(tk.Tk):
         # Pedir destino
         first_item = self.staged_items[0]
         default_name = os.path.splitext(os.path.basename(first_item.rstrip(r"\/")))[0] + ".sb"
-        default_dir = os.path.dirname(first_item)
-        init_save = os.path.join(default_dir, default_name)
+        default_dir = os.path.dirname(first_item) if os.path.isdir(os.path.dirname(first_item)) else os.getcwd()
 
         out_path = filedialog.asksaveasfilename(
             title="Guardar archivo .sb como",
@@ -540,43 +539,31 @@ class SmartBundleProApp(tk.Tk):
         if not out_path:
             return
 
-        # Preparar carpeta temporal con los items staged
-        temp_stage_dir = tempfile.mkdtemp(prefix="sb_stage_")
-        for it in self.staged_items:
-            if not os.path.exists(it): continue
-            dest = os.path.join(temp_stage_dir, os.path.basename(it))
-            if os.path.isdir(it):
-                shutil.copytree(it, dest)
-            else:
-                shutil.copy2(it, dest)
-
+        target_items = list(self.staged_items)
         self.lbl_archive_title.config(text=f"Comprimiendo hacia {os.path.basename(out_path)}...")
         self.chart_spline.reset_data(0.0)
         self.chart_bars.reset_data()
 
         def worker():
             t_start = time.perf_counter()
-            processed_bytes = 0
-            block_times = []
-            
             try:
-                def progress_cb(phase, cur, total, extra):
-                    nonlocal processed_bytes
+                def progress_cb(phase, cur, ratio_extra, alg_name):
                     if phase == "compressed_block":
-                        # Medición real de rendimiento
                         t_now = time.perf_counter()
                         elapsed = max(0.001, t_now - t_start)
-                        # Calcular velocidad instantánea (MB/s)
                         speed_mb = (cur * self.archiver.block_size / (1024 * 1024)) / elapsed
-                        
-                        # Actualizar gráficos con datos reales
+                        b_ratio = float(ratio_extra) / 100.0 if ratio_extra > 0 else 0.0
+
+                        self.after(0, lambda r=b_ratio: self.chart_spline.set_data(r))
+                        self.after(0, lambda r=b_ratio: self.lbl_ratio_pct.config(text=f"{r:.1f}%"))
                         self.after(0, lambda s=speed_mb: self.chart_bars.set_throughput(s))
                         self.after(0, lambda s=speed_mb: self.lbl_perf_val.config(text=f"{s:.1f} MB/s"))
+                        self.after(0, lambda r=b_ratio: self.chart_gauge.set_value(r))
 
                     elif phase == "scanned":
                         pass
 
-                stats = self.archiver.compress(temp_stage_dir, out_path, progress_cb=progress_cb)
+                stats = self.archiver.compress(target_items, out_path, progress_cb=progress_cb)
                 t_total = max(0.001, time.perf_counter() - t_start)
                 
                 # Cargar el archivo generado
@@ -595,8 +582,6 @@ class SmartBundleProApp(tk.Tk):
                 ))
             except Exception as e:
                 self.after(0, lambda err=str(e): messagebox.showerror("Fallo de compresión", f"Error durante la compresión:\n{err}"))
-            finally:
-                shutil.rmtree(temp_stage_dir, ignore_errors=True)
 
         threading.Thread(target=worker, daemon=True).start()
 

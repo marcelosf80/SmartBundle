@@ -86,13 +86,40 @@ def scan_target(target_path: str) -> List[str]:
             file_list.append(os.path.join(root, f))
     return file_list
 
-def file_data_generator(file_path: str, base_dir: str, current_offset: int) -> tuple[FileEntry, bytes]:
+def scan_multi_targets(targets: List[str]) -> List[tuple[str, str]]:
+    """Escanea múltiples objetivos retornando pares (ruta_absoluta, ruta_relativa_archivo)."""
+    results: List[tuple[str, str]] = []
+    seen = set()
+
+    for target in targets:
+        target = os.path.abspath(target)
+        if not os.path.exists(target):
+            continue
+
+        if os.path.isfile(target):
+            rel = os.path.basename(target)
+            if rel not in seen:
+                results.append((target, rel))
+                seen.add(rel)
+        elif os.path.isdir(target):
+            folder_name = os.path.basename(target.rstrip(r"\/"))
+            for root, _, files in os.walk(target):
+                for f in sorted(files):
+                    abs_f = os.path.join(root, f)
+                    sub_rel = os.path.relpath(abs_f, target).replace("\\", "/")
+                    rel = f"{folder_name}/{sub_rel}" if sub_rel != "." else folder_name
+                    if rel not in seen:
+                        results.append((abs_f, rel))
+                        seen.add(rel)
+    return results
+
+def file_data_generator(file_path: str, rel_path: str, current_offset: int) -> tuple[FileEntry, bytes]:
     """Lee y procesa un archivo individual de forma eficiente para streaming."""
     stat = os.stat(file_path)
     with open(file_path, "rb") as f:
         raw_content = f.read()
 
-    rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+    rel_path = rel_path.replace("\\", "/")
     crc = zlib.crc32(raw_content) & 0xFFFFFFFF
 
     is_expanded, recipe_json_bytes, stream_payload = ZipStreamPreprocessor.expand_archive(raw_content)
