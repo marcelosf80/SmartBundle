@@ -3,154 +3,188 @@ import os
 import sys
 import winreg
 
-def get_base_dir() -> str:
-    return os.path.dirname(os.path.abspath(__file__))
-
-def get_python_exe() -> str:
-    return sys.executable
-
-def install_context_menu():
-    """Registra menú contextual en cascada para Windows 10/11."""
-    base_dir = get_base_dir()
-    cli_path = os.path.join(base_dir, "sb_cli.py")
-    gui_path = os.path.join(base_dir, "sb_gui.py")
-    icon_path = os.path.join(base_dir, "app_icon.ico")
+def get_installed_paths():
+    """Detecta si se ejecuta desde Archivos de Programa o desde la carpeta de desarrollo."""
+    prog_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    default_install = os.path.join(prog_files, "SmartBundle")
     
-    python_exe = get_python_exe()
-    pythonw_exe = os.path.join(os.path.dirname(python_exe), "pythonw.exe")
-    if not os.path.exists(pythonw_exe):
-        pythonw_exe = python_exe
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    if os.path.exists(os.path.join(default_install, "SmartBundle.exe")):
+        exe_path = os.path.join(default_install, "SmartBundle.exe")
+        icon_path = os.path.join(default_install, "app_icon.ico")
+    elif os.path.exists(os.path.join(current_dir, "dist", "SmartBundle", "SmartBundle.exe")):
+        exe_path = os.path.join(current_dir, "dist", "SmartBundle", "SmartBundle.exe")
+        icon_path = os.path.join(current_dir, "app_icon.ico")
+    elif os.path.exists(os.path.join(current_dir, "SmartBundle.exe")):
+        exe_path = os.path.join(current_dir, "SmartBundle.exe")
+        icon_path = os.path.join(current_dir, "app_icon.ico")
+    else:
+        # Fallback a python
+        py_exe = sys.executable
+        pyw_exe = os.path.join(os.path.dirname(py_exe), "pythonw.exe")
+        if not os.path.exists(pyw_exe): pyw_exe = py_exe
+        gui_p = os.path.join(current_dir, "sb_gui.py")
+        cli_p = os.path.join(current_dir, "sb_cli.py")
+        exe_path = f'"{pyw_exe}" "{gui_p}"'
+        icon_path = os.path.join(current_dir, "app_icon.ico")
+        return exe_path, exe_path, icon_path, False
 
     if not os.path.exists(icon_path):
-        icon_path = "shell32.dll,48"
+        icon_path = exe_path
 
-    # Targets: Archivos (*) y Carpetas (Directory)
+    return f'"{exe_path}"', f'"{exe_path}"', icon_path, True
+
+def install_context_menu(target_hive=winreg.HKEY_CURRENT_USER):
+    """
+    Registra el menú contextual al estilo WinRAR:
+    - SmartBundle >
+      - Añadir al archivo...
+      - Añadir a "<nombre>.sb" (Equilibrado)
+      - Añadir a "<nombre>.sb" (Ultra Extremo)
+    Y para archivos .sb:
+      - Extraer ficheros...
+      - Extraer aquí
+      - Extraer en <carpeta>\
+    """
+    gui_cmd, cli_cmd, icon_p, is_exe = get_installed_paths()
+
+    # Targets: Archivos (*), Carpetas (Directory) y Fondo de Explorador (Directory\Background)
     targets = [
         r"Software\Classes\*\shell\SmartBundle",
-        r"Software\Classes\Directory\shell\SmartBundle",
-        r"Software\Classes\Directory\Background\shell\SmartBundle"
+        r"Software\Classes\Directory\shell\SmartBundle"
     ]
 
     for root_target in targets:
-        # Menú principal en cascada
-        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, root_target)
+        key = winreg.CreateKey(target_hive, root_target)
         winreg.SetValueEx(key, "MUIVerb", 0, winreg.REG_SZ, "SmartBundle")
-        winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
+        winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_p)
         winreg.SetValueEx(key, "SubCommands", 0, winreg.REG_SZ, "")
 
-        # Subopciones
         shell_key = winreg.CreateKey(key, "shell")
 
-        # 1. Comprimir Ultra (Extremo)
-        c1 = winreg.CreateKey(shell_key, "01_compress_ultra")
-        winreg.SetValueEx(c1, "MUIVerb", 0, winreg.REG_SZ, "Comprimir en .sb (Ultra Extremo)")
-        winreg.SetValueEx(c1, "Icon", 0, winreg.REG_SZ, icon_path)
-        c1_cmd = winreg.CreateKey(c1, "command")
-        winreg.SetValueEx(c1_cmd, "", 0, winreg.REG_SZ, f'"{python_exe}" "{cli_path}" compress "%1" -m extreme')
+        # 1. Añadir al archivo... (Abre la GUI)
+        s1 = winreg.CreateKey(shell_key, "01_add_gui")
+        winreg.SetValueEx(s1, "MUIVerb", 0, winreg.REG_SZ, "Añadir al archivo...")
+        winreg.SetValueEx(s1, "Icon", 0, winreg.REG_SZ, icon_p)
+        s1_cmd = winreg.CreateKey(s1, "command")
+        winreg.SetValueEx(s1_cmd, "", 0, winreg.REG_SZ, f'{gui_cmd} "%1"')
 
-        # 2. Comprimir Rápido
-        c2 = winreg.CreateKey(shell_key, "02_compress_fast")
-        winreg.SetValueEx(c2, "MUIVerb", 0, winreg.REG_SZ, "Comprimir en .sb (Rápido Zstd)")
-        winreg.SetValueEx(c2, "Icon", 0, winreg.REG_SZ, icon_path)
-        c2_cmd = winreg.CreateKey(c2, "command")
-        winreg.SetValueEx(c2_cmd, "", 0, winreg.REG_SZ, f'"{python_exe}" "{cli_path}" compress "%1" -m fast')
+        # 2. Añadir a archivo .sb (Equilibrado)
+        s2 = winreg.CreateKey(shell_key, "02_add_fast")
+        winreg.SetValueEx(s2, "MUIVerb", 0, winreg.REG_SZ, 'Añadir al archivo .sb (Equilibrado)')
+        winreg.SetValueEx(s2, "Icon", 0, winreg.REG_SZ, icon_p)
+        s2_cmd = winreg.CreateKey(s2, "command")
+        if is_exe:
+            current_dir = os.path.dirname(icon_p)
+            cli_p = os.path.join(current_dir, "sb_cli.py")
+            cmd = f'"{sys.executable}" "{cli_p}" compress "%1" -m balanced' if os.path.exists(cli_p) else f'{gui_cmd} "%1"'
+        else:
+            cmd = f'{cli_cmd} compress "%1" -m balanced'
+        winreg.SetValueEx(s2_cmd, "", 0, winreg.REG_SZ, cmd)
 
-        # 3. Abrir en SmartBundle GUI
-        c3 = winreg.CreateKey(shell_key, "03_open_gui")
-        winreg.SetValueEx(c3, "MUIVerb", 0, winreg.REG_SZ, "Abrir en SmartBundle GUI")
-        winreg.SetValueEx(c3, "Icon", 0, winreg.REG_SZ, icon_path)
-        c3_cmd = winreg.CreateKey(c3, "command")
-        winreg.SetValueEx(c3_cmd, "", 0, winreg.REG_SZ, f'"{pythonw_exe}" "{gui_path}"')
+        # 3. Añadir a archivo .sb (Ultra Extremo)
+        s3 = winreg.CreateKey(shell_key, "03_add_ultra")
+        winreg.SetValueEx(s3, "MUIVerb", 0, winreg.REG_SZ, 'Añadir al archivo .sb (Ultra Extremo)')
+        winreg.SetValueEx(s3, "Icon", 0, winreg.REG_SZ, icon_p)
+        s3_cmd = winreg.CreateKey(s3, "command")
+        if is_exe:
+            current_dir = os.path.dirname(icon_p)
+            cli_p = os.path.join(current_dir, "sb_cli.py")
+            cmd = f'"{sys.executable}" "{cli_p}" compress "%1" -m extreme' if os.path.exists(cli_p) else f'{gui_cmd} "%1"'
+        else:
+            cmd = f'{cli_cmd} compress "%1" -m extreme'
+        winreg.SetValueEx(s3_cmd, "", 0, winreg.REG_SZ, cmd)
 
-    # Registro de asociación para archivos .sb
-    sb_ext = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.sb")
+    # 4. Configurar asociación para archivos .sb
+    sb_ext = winreg.CreateKey(target_hive, r"Software\Classes\.sb")
     winreg.SetValueEx(sb_ext, "", 0, winreg.REG_SZ, "SmartBundleArchive")
 
-    sb_class = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\SmartBundleArchive")
+    sb_class = winreg.CreateKey(target_hive, r"Software\Classes\SmartBundleArchive")
     winreg.SetValueEx(sb_class, "", 0, winreg.REG_SZ, "Archivo Comprimido SmartBundle")
     
-    # Icono del tipo de archivo
     default_icon = winreg.CreateKey(sb_class, "DefaultIcon")
-    winreg.SetValueEx(default_icon, "", 0, winreg.REG_SZ, icon_path)
+    winreg.SetValueEx(default_icon, "", 0, winreg.REG_SZ, icon_p)
 
-    # Opciones de menú para archivos .sb
     sb_shell = winreg.CreateKey(sb_class, "shell")
     
+    # Menú en cascada para .sb
+    sb_main = winreg.CreateKey(sb_shell, "SmartBundle")
+    winreg.SetValueEx(sb_main, "MUIVerb", 0, winreg.REG_SZ, "SmartBundle")
+    winreg.SetValueEx(sb_main, "Icon", 0, winreg.REG_SZ, icon_p)
+    winreg.SetValueEx(sb_main, "SubCommands", 0, winreg.REG_SZ, "")
+
+    sb_sub_shell = winreg.CreateKey(sb_main, "shell")
+
+    # Extraer ficheros... (Abre GUI)
+    e1 = winreg.CreateKey(sb_sub_shell, "01_extract_gui")
+    winreg.SetValueEx(e1, "MUIVerb", 0, winreg.REG_SZ, "Extraer ficheros...")
+    winreg.SetValueEx(e1, "Icon", 0, winreg.REG_SZ, icon_p)
+    e1_cmd = winreg.CreateKey(e1, "command")
+    winreg.SetValueEx(e1_cmd, "", 0, winreg.REG_SZ, f'{gui_cmd} "%1"')
+
     # Extraer aquí
-    x_here = winreg.CreateKey(sb_shell, "01_extract_here")
-    winreg.SetValueEx(x_here, "MUIVerb", 0, winreg.REG_SZ, "Extraer aquí")
-    winreg.SetValueEx(x_here, "Icon", 0, winreg.REG_SZ, icon_path)
-    x_here_cmd = winreg.CreateKey(x_here, "command")
-    winreg.SetValueEx(x_here_cmd, "", 0, winreg.REG_SZ, f'"{python_exe}" "{cli_path}" decompress "%1"')
+    e2 = winreg.CreateKey(sb_sub_shell, "02_extract_here")
+    winreg.SetValueEx(e2, "MUIVerb", 0, winreg.REG_SZ, "Extraer aquí")
+    winreg.SetValueEx(e2, "Icon", 0, winreg.REG_SZ, icon_p)
+    e2_cmd = winreg.CreateKey(e2, "command")
+    if is_exe:
+        current_dir = os.path.dirname(icon_p)
+        cli_p = os.path.join(current_dir, "sb_cli.py")
+        cmd = f'"{sys.executable}" "{cli_p}" decompress "%1"' if os.path.exists(cli_p) else f'{gui_cmd} "%1"'
+    else:
+        cmd = f'{cli_cmd} decompress "%1"'
+    winreg.SetValueEx(e2_cmd, "", 0, winreg.REG_SZ, cmd)
 
-    # Listar / Verificar integridad
-    x_list = winreg.CreateKey(sb_shell, "02_list")
-    winreg.SetValueEx(x_list, "MUIVerb", 0, winreg.REG_SZ, "Verificar integridad y listar contenido")
-    winreg.SetValueEx(x_list, "Icon", 0, winreg.REG_SZ, icon_path)
-    x_list_cmd = winreg.CreateKey(x_list, "command")
-    winreg.SetValueEx(x_list_cmd, "", 0, winreg.REG_SZ, f'"{python_exe}" "{cli_path}" list "%1"')
+    # Doble clic abre con SmartBundle GUI
+    open_cmd_key = winreg.CreateKey(sb_shell, "open")
+    winreg.SetValueEx(open_cmd_key, "", 0, winreg.REG_SZ, "Abrir con SmartBundle")
+    winreg.SetValueEx(open_cmd_key, "Icon", 0, winreg.REG_SZ, icon_p)
+    open_cmd = winreg.CreateKey(open_cmd_key, "command")
+    winreg.SetValueEx(open_cmd, "", 0, winreg.REG_SZ, f'{gui_cmd} "%1"')
 
-    # Abrir con GUI
-    x_gui = winreg.CreateKey(sb_shell, "03_gui")
-    winreg.SetValueEx(x_gui, "MUIVerb", 0, winreg.REG_SZ, "Abrir con SmartBundle")
-    winreg.SetValueEx(x_gui, "Icon", 0, winreg.REG_SZ, icon_path)
-    x_gui_cmd = winreg.CreateKey(x_gui, "command")
-    winreg.SetValueEx(x_gui_cmd, "", 0, winreg.REG_SZ, f'"{pythonw_exe}" "{gui_path}"')
+    print(f"[OK] Menu contextual estilo WinRAR y asociacion .sb registrados con icono: {icon_p}")
 
-    # Acción por defecto al hacer doble clic: abrir GUI
-    winreg.SetValueEx(sb_shell, "", 0, winreg.REG_SZ, "03_gui")
-
-    print("[OK] Menu contextual en cascada y asociacion .sb instalados exitosamente.")
-
-def uninstall_context_menu():
-    """Elimina el menú contextual y asociaciones de registro."""
-    keys_to_delete = [
-        r"Software\Classes\*\shell\SmartBundle\shell\01_compress_ultra\command",
-        r"Software\Classes\*\shell\SmartBundle\shell\01_compress_ultra",
-        r"Software\Classes\*\shell\SmartBundle\shell\02_compress_fast\command",
-        r"Software\Classes\*\shell\SmartBundle\shell\02_compress_fast",
-        r"Software\Classes\*\shell\SmartBundle\shell\03_open_gui\command",
-        r"Software\Classes\*\shell\SmartBundle\shell\03_open_gui",
+def uninstall_context_menu(target_hive=winreg.HKEY_CURRENT_USER):
+    """Elimina las entradas de registro creadas."""
+    keys = [
+        r"Software\Classes\*\shell\SmartBundle\shell\01_add_gui\command",
+        r"Software\Classes\*\shell\SmartBundle\shell\01_add_gui",
+        r"Software\Classes\*\shell\SmartBundle\shell\02_add_fast\command",
+        r"Software\Classes\*\shell\SmartBundle\shell\02_add_fast",
+        r"Software\Classes\*\shell\SmartBundle\shell\03_add_ultra\command",
+        r"Software\Classes\*\shell\SmartBundle\shell\03_add_ultra",
         r"Software\Classes\*\shell\SmartBundle\shell",
         r"Software\Classes\*\shell\SmartBundle",
         
-        r"Software\Classes\Directory\shell\SmartBundle\shell\01_compress_ultra\command",
-        r"Software\Classes\Directory\shell\SmartBundle\shell\01_compress_ultra",
-        r"Software\Classes\Directory\shell\SmartBundle\shell\02_compress_fast\command",
-        r"Software\Classes\Directory\shell\SmartBundle\shell\02_compress_fast",
-        r"Software\Classes\Directory\shell\SmartBundle\shell\03_open_gui\command",
-        r"Software\Classes\Directory\shell\SmartBundle\shell\03_open_gui",
+        r"Software\Classes\Directory\shell\SmartBundle\shell\01_add_gui\command",
+        r"Software\Classes\Directory\shell\SmartBundle\shell\01_add_gui",
+        r"Software\Classes\Directory\shell\SmartBundle\shell\02_add_fast\command",
+        r"Software\Classes\Directory\shell\SmartBundle\shell\02_add_fast",
+        r"Software\Classes\Directory\shell\SmartBundle\shell\03_add_ultra\command",
+        r"Software\Classes\Directory\shell\SmartBundle\shell\03_add_ultra",
         r"Software\Classes\Directory\shell\SmartBundle\shell",
         r"Software\Classes\Directory\shell\SmartBundle",
 
-        r"Software\Classes\Directory\Background\shell\SmartBundle\shell\01_compress_ultra\command",
-        r"Software\Classes\Directory\Background\shell\SmartBundle\shell\01_compress_ultra",
-        r"Software\Classes\Directory\Background\shell\SmartBundle\shell\02_compress_fast\command",
-        r"Software\Classes\Directory\Background\shell\SmartBundle\shell\02_compress_fast",
-        r"Software\Classes\Directory\Background\shell\SmartBundle\shell\03_open_gui\command",
-        r"Software\Classes\Directory\Background\shell\SmartBundle\shell\03_open_gui",
-        r"Software\Classes\Directory\Background\shell\SmartBundle\shell",
-        r"Software\Classes\Directory\Background\shell\SmartBundle",
-
-        r"Software\Classes\SmartBundleArchive\shell\01_extract_here\command",
-        r"Software\Classes\SmartBundleArchive\shell\01_extract_here",
-        r"Software\Classes\SmartBundleArchive\shell\02_list\command",
-        r"Software\Classes\SmartBundleArchive\shell\02_list",
-        r"Software\Classes\SmartBundleArchive\shell\03_gui\command",
-        r"Software\Classes\SmartBundleArchive\shell\03_gui",
+        r"Software\Classes\SmartBundleArchive\shell\SmartBundle\shell\01_extract_gui\command",
+        r"Software\Classes\SmartBundleArchive\shell\SmartBundle\shell\01_extract_gui",
+        r"Software\Classes\SmartBundleArchive\shell\SmartBundle\shell\02_extract_here\command",
+        r"Software\Classes\SmartBundleArchive\shell\SmartBundle\shell\02_extract_here",
+        r"Software\Classes\SmartBundleArchive\shell\SmartBundle\shell",
+        r"Software\Classes\SmartBundleArchive\shell\SmartBundle",
+        r"Software\Classes\SmartBundleArchive\shell\open\command",
+        r"Software\Classes\SmartBundleArchive\shell\open",
         r"Software\Classes\SmartBundleArchive\shell",
         r"Software\Classes\SmartBundleArchive\DefaultIcon",
         r"Software\Classes\SmartBundleArchive",
         r"Software\Classes\.sb",
     ]
-
-    for k in keys_to_delete:
+    for k in keys:
         try:
-            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, k)
+            winreg.DeleteKey(target_hive, k)
         except FileNotFoundError:
             pass
-
-    print("[OK] Menu contextual y asociaciones desinstalados.")
+    print("[OK] Entradas de menu contextual eliminadas.")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "uninstall":

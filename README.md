@@ -10,13 +10,32 @@ Descarga la versión compilada lista para usar en Windows (sin necesidad de inst
 
 👉 **[Descargar última versión en Releases](../../releases/latest)**
 
-1. Descarga `SmartBundle-Windows.zip`.
-2. Descomprime el archivo.
-3. Ejecuta `SmartBundle.exe` (Interfaz Gráfica) o utilízalo desde la consola mediante `sb_cli.exe`.
+## 📦 Instalación en Windows (C:\Program Files)
+
+SmartBundle incluye un instalador automático que integra el programa en el sistema y en el menú contextual de Windows con su propio icono (estilo WinRAR):
+
+1. Descarga el repositorio o el paquete `SmartBundle-Windows.zip`.
+2. Haz clic derecho en **`Instalar_SmartBundle_En_C.bat`** y selecciona **Ejecutar como Administrador** (o doble clic).
+3. El instalador:
+   - Instalará el programa en `C:\Program Files\SmartBundle`.
+   - Creará accesos directos en el **Escritorio** y en el **Menú Inicio**.
+   - Integrará el menú contextual en cascada con iconos para archivos, carpetas y archivos `.sb`.
+   - Asociará la extensión `.sb` para abrir y extraer con doble clic.
 
 ---
 
-## 📊 Rendimiento y Benchmark
+## 🖱️ Opciones en el Menú Contextual (Estilo WinRAR)
+
+- **Al hacer clic derecho en cualquier Archivo / Carpeta**:
+  - `SmartBundle >`
+    - `[Icono] Añadir al archivo...` *(Abre la interfaz gráfica con el archivo cargado)*
+    - `[Icono] Añadir a "<nombre>.sb" (Equilibrado)`
+    - `[Icono] Añadir a "<nombre>.sb" (Ultra Extremo)`
+
+- **Al hacer clic derecho en archivos `.sb`**:
+  - `SmartBundle >`
+    - `[Icono] Extraer ficheros...` *(Abre el selector de carpeta en la interfaz)*
+    - `[Icono] Extraer aquí` *(Extracción directa en el directorio actual)*
 
 Pruebas realizadas sobre un corpus heterogéneo (código fuente, JSON/logs estructurados, binarios x86/PE y carpetas multinivel con 39 archivos):
 

@@ -16,15 +16,35 @@ def format_bytes(size: float) -> str:
     return f"{size:.2f} PB"
 
 class SuperBinaryApp(tk.Tk):
-    def __init__(self):
+    def __init__(self, initial_path: str = None):
         super().__init__()
-        self.title("Super Binary (.sb) Archiver & Compressor")
-        self.geometry("740x580")
+        self.title("SmartBundle Pro (.sb) - Archivador & Compresor")
+        self.geometry("760x600")
         self.minsize(640, 480)
         self.configure(bg="#1e1e2e")
+        
+        # Cargar icono de la aplicación si existe
+        icon_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon.ico")
+        if os.path.exists(icon_p):
+            try:
+                self.iconbitmap(icon_p)
+            except Exception:
+                pass
 
         self._configure_styles()
         self._build_ui()
+        
+        if initial_path and os.path.exists(initial_path):
+            if initial_path.lower().endswith(".sb"):
+                self.notebook.select(self.tab_decompress)
+                self.var_decomp_src.set(initial_path)
+                base = os.path.splitext(os.path.basename(initial_path))[0]
+                self.var_decomp_dst.set(os.path.join(os.path.dirname(initial_path), base))
+            else:
+                self.notebook.select(self.tab_compress)
+                self.var_source.set(initial_path)
+                out = f"{initial_path}.sb" if not initial_path.endswith(".sb") else initial_path
+                self.var_dest.set(out)
 
     def _configure_styles(self):
         style = ttk.Style(self)
@@ -334,7 +354,8 @@ class SuperBinaryApp(tk.Tk):
         messagebox.showerror("Fallo de descompresión", err)
 
 def main():
-    app = SuperBinaryApp()
+    initial = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None
+    app = SuperBinaryApp(initial_path=initial)
     app.mainloop()
 
 if __name__ == "__main__":
