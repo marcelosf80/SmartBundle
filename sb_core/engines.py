@@ -21,7 +21,7 @@ class PassthroughEngine:
 
 class ZstdUltraEngine:
     algorithm_id = AlgorithmID.ZSTD_ULTRA
-    def __init__(self, level: int = 22):
+    def __init__(self, level: int = 12):
         self.level = level
         self.cctx = zstd.ZstdCompressor(level=self.level, threads=-1)
         self.dctx = zstd.ZstdDecompressor()
@@ -34,33 +34,37 @@ class ZstdUltraEngine:
 
 class BrotliMaxEngine:
     algorithm_id = AlgorithmID.BROTLI_MAX
+    def __init__(self, quality: int = 8):
+        self.quality = quality
+
     def compress(self, data: bytes) -> bytes:
-        return brotli.compress(data, quality=11, lgwin=24)
+        return brotli.compress(data, quality=self.quality, lgwin=22)
 
     def decompress(self, data: bytes) -> bytes:
         return brotli.decompress(data)
 
 class Lzma2ExtremeEngine:
     algorithm_id = AlgorithmID.LZMA2_EXTREME
+    def __init__(self, preset: int = 6):
+        self.preset = preset
+
     def compress(self, data: bytes) -> bytes:
         filters = [{
             "id": lzma.FILTER_LZMA2,
-            "preset": 9 | lzma.PRESET_EXTREME,
-            "dict_size": 128 * 1024 * 1024,
-            "nice_len": 273,
-            "depth": 1000
+            "preset": self.preset,
+            "dict_size": 16 * 1024 * 1024,
         }]
         return lzma.compress(data, format=lzma.FORMAT_RAW, filters=filters)
 
     def decompress(self, data: bytes) -> bytes:
-        filters = [{"id": lzma.FILTER_LZMA2, "dict_size": 128 * 1024 * 1024}]
+        filters = [{"id": lzma.FILTER_LZMA2, "dict_size": 16 * 1024 * 1024}]
         return lzma.decompress(data, format=lzma.FORMAT_RAW, filters=filters)
 
 class BcjLzma2Engine:
     algorithm_id = AlgorithmID.BCJ_LZMA2
-    def __init__(self):
+    def __init__(self, preset: int = 6):
         self.bcj = BCJx86Preprocessor()
-        self.lzma_engine = Lzma2ExtremeEngine()
+        self.lzma_engine = Lzma2ExtremeEngine(preset=preset)
 
     def compress(self, data: bytes) -> bytes:
         transformed = self.bcj.encode(data)
@@ -72,7 +76,7 @@ class BcjLzma2Engine:
 
 class PpmdTextEngine:
     algorithm_id = AlgorithmID.PPMD_TEXT
-    def __init__(self, max_order: int = 8, mem_size: int = 16 * 1024 * 1024):
+    def __init__(self, max_order: int = 6, mem_size: int = 8 * 1024 * 1024):
         self.max_order = max_order
         self.mem_size = mem_size
 
@@ -84,9 +88,9 @@ class PpmdTextEngine:
 
 class DeltaLzma2Engine:
     algorithm_id = AlgorithmID.DELTA_LZMA2
-    def __init__(self):
+    def __init__(self, preset: int = 6):
         self.delta = DeltaPreprocessor()
-        self.lzma_engine = Lzma2ExtremeEngine()
+        self.lzma_engine = Lzma2ExtremeEngine(preset=preset)
 
     def compress(self, data: bytes) -> bytes:
         transformed = self.delta.encode(data)

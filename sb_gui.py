@@ -189,7 +189,7 @@ class SmartBundleProApp(tk.Tk):
         
         # Archivos/carpetas seleccionados para compresión (Staged)
         self.staged_items: List[str] = []
-        self.archiver = SBArchiver(mode=CompressionMode.EXTREME)
+        self.archiver = SBArchiver(mode=CompressionMode.BALANCED)
 
         # Pre-cargar iconos en memoria
         self._load_icon_assets()
@@ -777,7 +777,31 @@ class SmartBundleProApp(tk.Tk):
             messagebox.showerror("Error al abrir", str(e))
 
     def cmd_optimize_dialog(self):
-        messagebox.showinfo("Optimizer", "Modo de optimización activo: Extreme (Multihilo con compresión de bloques adaptativa y BCJ x86).")
+        dlg = tk.Toplevel(self)
+        dlg.title("Modo de Compresión SmartBundle")
+        dlg.geometry("450x260")
+        dlg.configure(bg="#181c33")
+        dlg.transient(self)
+        dlg.grab_set()
+
+        tk.Label(dlg, text="Selecciona la velocidad de compresión:", bg="#181c33", fg="#f8f8f2", font=("Segoe UI", 11, "bold")).pack(pady=(16, 12))
+
+        from sb_core.optimizer import BlockOptimizer
+
+        def set_mode(m: CompressionMode, name: str):
+            self.archiver.mode = m
+            self.archiver.optimizer = BlockOptimizer(mode=m)
+            dlg.destroy()
+            messagebox.showinfo("Modo Actualizado", f"Modo configurado a: {name}")
+
+        btn_fast = tk.Button(dlg, text="⚡ FAST (Ultra Rápido - Ideal para respaldos masivos)", bg="#1b203a", fg="#38bdf8", activebackground="#2d2254", activeforeground="#38bdf8", relief="flat", font=("Segoe UI", 9, "bold"), pady=6, command=lambda: set_mode(CompressionMode.FAST, "FAST (Alta Velocidad)"), cursor="hand2")
+        btn_fast.pack(fill="x", padx=24, pady=4)
+
+        btn_bal = tk.Button(dlg, text="⚖️ BALANCED (Equilibrado - Velocidad y Reducción Recomendada)", bg="#1b203a", fg="#a855f7", activebackground="#2d2254", activeforeground="#a855f7", relief="flat", font=("Segoe UI", 9, "bold"), pady=6, command=lambda: set_mode(CompressionMode.BALANCED, "BALANCED (Equilibrado)"), cursor="hand2")
+        btn_bal.pack(fill="x", padx=24, pady=4)
+
+        btn_ext = tk.Button(dlg, text="📦 EXTREME (Máxima Reducción - Búsqueda SOTA profunda)", bg="#1b203a", fg="#f43f5e", activebackground="#2d2254", activeforeground="#f43f5e", relief="flat", font=("Segoe UI", 9, "bold"), pady=6, command=lambda: set_mode(CompressionMode.EXTREME, "EXTREME (Máxima Reducción)"), cursor="hand2")
+        btn_ext.pack(fill="x", padx=24, pady=4)
 
     def cmd_convert_dialog(self):
         f = filedialog.askopenfilename(title="Convertir archivo ZIP/7Z/TAR a formato .sb", filetypes=[("Archivos comprimidos", "*.zip;*.7z;*.tar;*.tar.gz;*.rar")])
